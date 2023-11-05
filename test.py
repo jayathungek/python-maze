@@ -1,15 +1,24 @@
-import sys
-import pickle
+import unittest
+
 from maze import Cell
     
 
-def countdown(start, end):
-    yield start
-    if start > end:
-        yield from countdown(start - 1, end)
+class TestCell(unittest.TestCase):
 
-def wrapper(n):
-    yield from countdown(n, 0)
+    def test_set_region(self):
+        pass
+
+    def test_unset_region(self):
+        pass
+
+    def test_equality(self):
+        pass
+
+    def test_set_wall(self):
+        pass
+
+class TestMaze(unittest.TestCase)
+
 
 
 

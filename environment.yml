@@ -1,0 +1,7 @@
+name: python-maze
+channels:
+  - anaconda
+dependencies:
+  - pip
+  - pip:
+    - pyray

@@ -10,7 +10,7 @@
 from time import time
 import copy
 import random
-from typing import List
+from typing import List, Tuple, Literal
 from dataclasses import dataclass
 import pickle
 
@@ -50,15 +50,57 @@ def cell_eq(c1: Cell, c2: Cell) -> bool:
     return c1.x == c2.x and c1.y == c2.y
 
 
+def get_collapsed(cells: List[List[Cell]]) -> List[Cell]:
+    return sum(cells, [])
+
+
+def set_boundary_wall(partition1: List[List[Cell]], partition2: List[List[Cell]], vertical: bool):
+    if vertical:
+        for row in partition1:
+            last_cell = row[-1]
+            last_cell.wall_E = True
+
+        for row in partition2:
+            first_cell = row[0]
+            first_cell.wall_W = True
+        
+        empty_cell_row = random.choice(range(len(partition1)))
+        empty_cell_p1 = partition1[empty_cell_row][-1]
+        empty_cell_p2 = partition2[empty_cell_row][0]
+        empty_cell_p1.wall_E = False
+        empty_cell_p2.wall_W = False
+    else:
+        last_row = partition1[0]
+        for cell in last_row:
+            cell.wall_S = True
+
+        first_row = partition2[-1]
+        for cell in first_row:
+            cell.wall_N = True
+        
+        empty_cell_idx = random.choice(range(len(partition1[0])))
+        empty_cell_p1 = last_row[empty_cell_idx]
+        empty_cell_p2 = first_row[empty_cell_idx]
+        empty_cell_p1.wall_S = False
+        empty_cell_p2.wall_N = False
+
+
+def set_subregions(subregion: List[List[Cell]], value: Literal[0, 1]) -> None:
+    for row in subregion:
+        for cell in row:
+            cell.subregion = value
+
+
 class Maze:
     width: int
     height: int
     cell_size: int
     cells: List[List[Cell]]
 
-    min_start_size: int
+    min_room_size: int
+    vertical_seek: bool = False
 
-    def __init__(self, width: int, height: int, cell_size:int=40, min_start_size=4) -> None:
+    def __init__(self, width: int, height: int, cell_size:int=40, min_room_size=4) -> None:
         self.width = width
         self.height = height
         self.cell_size = cell_size
@@ -66,8 +108,29 @@ class Maze:
             [Cell(x, y) for x in range(width)] 
             for y in range(height)
         ]
-        self.min_start_size = min_start_size
-        self.connect_cells()
+        self.min_room_size = min_room_size
+
+    def bisect(self, cells: List[List[Cell]]) -> Tuple[List[List[Cell]]]:
+        width = len(cells[0])
+        height = len(cells)
+
+        if width >= height:
+            midpoint = width // 2
+            selected_left = [
+                row[:midpoint] for row in cells
+            ]
+            selected_right = [
+                row[midpoint:] for row in cells
+            ]
+        else:
+            midpoint = height // 2
+            selected_left = [
+                row for row in cells[:midpoint]
+            ]
+            selected_right = [
+                row for row in cells[midpoint:]
+            ]
+        return selected_left, selected_right
 
     def save(self, filename: str) -> None:
         with open(filename, "wb") as fh:
@@ -108,118 +171,30 @@ class Maze:
 
         
 
-    
-    def is_within_bounds(self, x: int, y: int) -> bool:
-        return 0 <= x < self.width and 0 <= y < self.height
-
-    def get_collapsed(self) -> List[Cell]:
-        return sum(self.cells, [])
 
     def reset_subregions(self) -> None:
         for row in self.cells:
             for cell in row:
                 cell.subregion = None
-    
-    def connect_cells(self) -> None:
-        for row in self.cells:
-            for cell in row:
-                # Von Neumann neighbourhood
-                northX = cell.x
-                northY = cell.y - 1
-                if self.is_within_bounds(northX, northY):
-                    cell.north = self.cells[northY][northX]
-
-                southX = cell.x
-                southY = cell.y + 1
-                if self.is_within_bounds(southX, southY):
-                    cell.south = self.cells[southY][southX]
-
-                eastX = cell.x + 1
-                eastY = cell.y 
-                if self.is_within_bounds(eastX, eastY):
-                    cell.east = self.cells[eastY][eastX]
-
-                westX = cell.x - 1
-                westY = cell.y 
-                if self.is_within_bounds(westX, westY):
-                    cell.west = self.cells[westY][westX]
 
 
-    def set_walls_at_boundary(self, area):
-        # sets walls to true for cells that border subregion
-        # removes one wall at random to satisfy the condition of maze solvability
-        
-        last_cell = None
-        is_removed = False
-        removal_chance = 1.0/(len(area)**0.5) # needs a bit of explanation
-        for cell in area: 
-            # start = time()
-            # print(f"set_walls_at_boundary (inner for loop) - {time() - start}")
-            for n in cell.get_neighbours():
-                if (random.random() < removal_chance) and not is_removed:
-                    # No-op and set flag
-                    is_removed = True
-                else:
-                    if n in area and n is not None and n.subregion != cell.subregion:
-                        dX = n.x - cell.x
-                        dY = n.y - cell.y
-                        if dY > 0:
-                            # neighbour is to the south
-                            self.cells[cell.y][cell.x].wall_S = True
-                            last_cell = (cell, "south")
-                        elif dY < 0:
-                            # neighbour is to the north
-                            self.cells[cell.y][cell.x].wall_N = True
-                            last_cell = (cell, "north")
-                        elif dX > 0:
-                            # neighbour is to the east
-                            self.cells[cell.y][cell.x].wall_E = True
-                            last_cell = (cell, "east")
-                        elif dX < 0:
-                            # neighbour is to the west
-                            self.cells[cell.y][cell.x].wall_W = True
-                            last_cell = (cell, "west")
 
-        if is_removed:
-            cell, direction = last_cell
-            if direction == "south":
-                self.cells[cell.y][cell.x].wall_S = False
-            elif direction == "north":
-                self.cells[cell.y][cell.x].wall_N = False
-            elif direction == "east":
-                self.cells[cell.y][cell.x].wall_E = False
-            elif direction == "west":
-                self.cells[cell.y][cell.x].wall_W = False
-
-    def _generate(self, area: List[Cell]) -> None:
-        if len(area) < self.min_start_size: return
-        frontier = random.sample(area, 2)
-        frontier[0].subregion = 0
-        frontier[1].subregion = 1
-
-        while len(frontier) > 0:
-            pop_idx  = random.randint(0, len(frontier) - 1)
-            cur_cell = frontier.pop(pop_idx)
-            for n in cur_cell.get_neighbours():
-                if n in area: 
-                    if n is not None and n.subregion is None:
-                        n.subregion = cur_cell.subregion
-                        frontier.append(n)
-                        self.cells[n.y][n.x].subregion = n.subregion
-                        if random.random() < 0.1:
-                            yield self.cells
-
-        self.set_walls_at_boundary(area)
-        all_cells = self.get_collapsed()
-        left_area = [cell for cell in all_cells if cell.subregion == 0]
-        right_area = [cell for cell in all_cells if cell.subregion == 1]
-        self.reset_subregions()
-        yield from self._generate(left_area)
-        yield from self._generate(right_area)
+    def _generate(self, area: List[List[Cell]], depth) -> None:
+        self.vertical_seek = not self.vertical_seek
+        if len(get_collapsed(area)) > self.min_room_size and depth > 0:
+            first_area, second_area = self.bisect(area)
+            set_boundary_wall(first_area, second_area, vertical=self.vertical_seek)
+            set_subregions(first_area, 0)
+            set_subregions(second_area, 1)
+            yield self.cells
+            self.reset_subregions()
+            yield from self._generate(first_area, depth - 1)
+            yield from self._generate(second_area, depth - 1)
+        else:
+            yield self.cells
 
     def generate(self):
-        subregion = self.get_collapsed()
-        yield from self._generate(subregion)
+        yield from self._generate(self.cells, 300)
 
     def draw(self) -> None:
         for row in self.cells:
@@ -284,7 +259,7 @@ class Maze:
                 BLACK 
             )
 
-def draw_cells(maze: Maze, cells: List[Cell]) -> None:
+def draw_cells(maze: Maze, cells: List[List[Cell]]) -> None:
     for row in cells:
         for cell in row:
             if cell.subregion == 0:
@@ -316,9 +291,9 @@ def create_maze_animation(filename: str, w: int, h: int, cell_sz: int, min_start
 
 
 if __name__ == "__main__":
-    MAZE_H = MAZE_W = 20
+    MAZE_H = MAZE_W = 40
     CELL_SZ = 30
-    MIN_START_SZ = 16
+    MIN_START_SZ = 4
     BASE_FILENAME = f"maze_{MAZE_H}-r{MIN_START_SZ}"
     FILENAME = f"{BASE_FILENAME}.pkl"
 
@@ -329,13 +304,10 @@ if __name__ == "__main__":
 
     init_window(maze.width * maze.cell_size, maze.height * maze.cell_size, "Maze")
     set_target_fps(20)
-    i = 0
-    # for maze_next in maze.maze_states:
     for maze_next in maze.generate():
         begin_drawing()
         clear_background(RAYWHITE)
         draw_cells(maze, maze_next)
         end_drawing()
-        take_screenshot(f"{BASE_FILENAME}/image{i}.png")
-        i += 1
+    take_screenshot(f"{BASE_FILENAME}.png")
     close_window()
